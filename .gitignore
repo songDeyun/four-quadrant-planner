@@ -1,0 +1,20 @@
+# Python / temporary files
+__pycache__/
+*.pyc
+tmp*/
+
+# Local user data and backups
+*.sqlite3
+*.db
+*备份*.json
+四象限计划/web/user-data/
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build outputs (remove this rule if publishing the built Windows app)
+build/
+dist/
