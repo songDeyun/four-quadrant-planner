@@ -7,6 +7,9 @@ tmp*/
 *.sqlite3
 *.db
 *备份*.json
+每日总结*.docx
+每日总结*.html
+每日总结*.md
 四象限计划/web/user-data/
 
 # Editor / OS files
@@ -18,3 +21,8 @@ Thumbs.db
 # Build outputs (remove this rule if publishing the built Windows app)
 build/
 dist/
+
+总结记录*.html
+
+# Local duplicate downloaded launcher
+/四象限计划 (1).exe
