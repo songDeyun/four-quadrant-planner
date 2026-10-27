@@ -111,7 +111,7 @@ function browser(storage) {
   assert.match(ui.nodes.get('dailyExportStatus').textContent, /保存成功/);
   assert.equal(ui.nodes.get('downloadDaily').disabled, false);
   assert.ok(written.includes('2026-10-26') && written.includes('2026-10-27'));
-  assert.ok(written.indexOf('2026-10-26') < written.indexOf('2026-10-27'));
+  assert.ok(written.indexOf('2026-10-26') > written.indexOf('2026-10-27'));
   ui.type('同一天的新版总结');
   await ui.nodes.get('downloadDaily').onclick();
   assert.equal(picks, 1);
@@ -124,7 +124,7 @@ function browser(storage) {
   assert.ok(!written.includes('2026-10-28'));
   ui.type('第三天的总结');
   await ui.flushArchive();
-  assert.ok(written.indexOf('2026-10-27') < written.indexOf('2026-10-28'));
+  assert.ok(written.indexOf('2026-10-27') > written.indexOf('2026-10-28'));
   assert.equal(picks, 1);
   permission = 'prompt';
   await ui.nodes.get('downloadDaily').onclick();
@@ -157,12 +157,45 @@ function browser(storage) {
   await ui.nodes.get('downloadDaily').onclick();
   assert.match(ui.nodes.get('dailySaveNotice').textContent, /未获得文件写入权限/);
   permission = 'granted'; allowGrant = true;
+  // A new location must receive all dates before becoming the automatic-write target.
+  const oldFile = written;
+  let relocated = '', locationWrites = 0;
+  const relocatedHandle = { name: '新位置的总结.html', queryPermission: async () => 'granted',
+    createWritable: async () => ({ write: async text => { relocated = text; locationWrites++; }, close: async () => {}, abort: async () => {} }) };
+  ui.window.showSaveFilePicker = async () => relocatedHandle;
+  await ui.nodes.get('changeDailyLocation').onclick();
+  assert.match(ui.nodes.get('dailySaveNotice').textContent, /已更改保存位置/);
+  assert.ok(relocated.includes('2026-10-26') && relocated.includes('2026-10-27') && relocated.includes('2026-10-28'));
+  assert.ok(relocated.indexOf('2026-10-28') < relocated.indexOf('2026-10-27'));
+  ui.type('换位置后自动保存');
+  await ui.flushArchive();
+  assert.ok(locationWrites >= 2);
+  assert.ok(relocated.includes('换位置后自动保存'));
+  assert.equal(written, oldFile); // The original file is not rewritten or deleted.
+  ui.window.showSaveFilePicker = async () => { const error = Error('cancel'); error.name = 'AbortError'; throw error; };
+  await ui.nodes.get('changeDailyLocation').onclick();
+  assert.match(ui.nodes.get('dailyExportStatus').textContent, /已取消更改/);
+  await ui.nodes.get('downloadDaily').onclick();
+  assert.match(ui.nodes.get('dailyExportStatus').textContent, /新位置的总结.html/);
+  assert.match(ui.nodes.get('dailySaveNotice').textContent, /保存成功/);
+  ui.window.showSaveFilePicker = async () => ({ name: '不可写.html', queryPermission: async () => 'granted', createWritable: async () => { throw Error('locked'); } });
+  await ui.nodes.get('changeDailyLocation').onclick();
+  assert.match(ui.nodes.get('dailySaveNotice').textContent, /仍保留原保存位置/);
+  ui.type('更改失败后仍保存到原位置');
+  await ui.flushArchive();
+  assert.ok(relocated.includes('更改失败后仍保存到原位置'));
+  assert.equal(ui.nodes.get('changeDailyLocation').disabled, false);
+  const unsorted = [{ date: '2025-12-31', text: '旧年' }, { date: '2026-10-27', text: '今天' }, { date: '2026-10-26', text: '昨天' }];
+  const sortedHtml = Core.html(unsorted);
+  assert.ok(sortedHtml.indexOf('2026-10-27') < sortedHtml.indexOf('2026-10-26'));
+  assert.ok(sortedHtml.indexOf('2026-10-26') < sortedHtml.indexOf('2025-12-31'));
+  assert.equal(unsorted[0].date, '2025-12-31');
   const fallbackUi = browser(storage);
   await fallbackUi.nodes.get('downloadDaily').onclick();
   assert.equal(fallbackUi.downloads.at(-1).name, '总结记录.html');
   assert.ok(!fallbackUi.nodes.get('dailySaveNotice').textContent.includes('保存成功'));
   const allHtml = await fallbackUi.downloads.at(-1).blob.text();
-  assert.ok(allHtml.indexOf('2026-10-26') < allHtml.indexOf('2026-10-27'));
+  assert.ok(allHtml.indexOf('2026-10-26') > allHtml.indexOf('2026-10-27'));
   assert.ok(Core.html([{ date: '2026-10-26', text: '<script>alert(1)</script>' }]).includes('&lt;script&gt;'));
   const emptyUi = browser(new Storage());
   await emptyUi.nodes.get('downloadDaily').onclick();
@@ -186,6 +219,7 @@ function browser(storage) {
   assert.ok(html.includes('dailySummaries:'));
   assert.ok(!html.includes('id="downloadDailyHtml"'));
   assert.ok(!html.includes('下载完整记录'));
+  assert.ok(html.includes('id="changeDailyLocation"'));
   // Exercise the actual backup importer, including compatibility and date merge rules.
   const backupStorage = new Storage(), elements = new Map();
   const get = key => {
@@ -235,5 +269,6 @@ function browser(storage) {
   backupStorage.fail = false;
   assert.ok(!fs.readFileSync(path.join(__dirname, '../web/daily.js'), 'utf8').includes('downloadDailyHtml'));
   console.log('PASS: autosave, midnight automatic file update, same-file archive, date deduplication, saving feedback, denied permission, cancellation and failure recovery');
+  console.log('PASS: newest-first HTML, location switch, complete history migration, old file retention, cancellation and failed-switch rollback');
   console.log('PASS: existing tasks preserved, v2/legacy backups, import conflict handling, local-month summary, deletion after filters, escaped content, CSV formula protection and storage rollback');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -5,7 +5,7 @@
   const input = $('dailyInput'), status = $('dailyStatus'), exportStatus = $('dailyExportStatus');
   let activeDay = Core.dayKey(), archiveHandle = null, archiveTimer = null;
   let writeChain = Promise.resolve();
-  let noticeTimer = null, saving = false;
+  let noticeTimer = null, saving = false, changingLocation = false;
   let storageFailed = false;
   const setStatus = (element, text, error = false) => { element.textContent = text; element.classList.toggle('error', error); };
   function notifySave(text, error = false) {
@@ -61,7 +61,7 @@
     return rows;
   }
   function scheduleArchive() {
-    if (!archiveHandle) return;
+    if (!archiveHandle || changingLocation) return;
     clearTimeout(archiveTimer);
     archiveTimer = setTimeout(writeArchive, 1000);
   }
@@ -80,14 +80,13 @@
       };
     });
   }
-  function writeArchive(showNotice = false) {
-    if (!archiveHandle) return Promise.resolve();
-    const target = archiveHandle;
+  function writeArchive(showNotice = false, target = archiveHandle) {
+    if (!target) return Promise.resolve(false);
     writeChain = writeChain.then(async () => {
       if (await target.queryPermission({ mode: 'readwrite' }) !== 'granted') {
         setStatus(exportStatus, '总结仍保留在程序里；请点击“保存总结记录”恢复文件写入权限。');
         if (showNotice) notifySave('保存未完成：请先允许文件写入', true);
-        return;
+        return false;
       }
       const text = Core.html(archiveRows());
       const writer = await target.createWritable();
@@ -95,17 +94,20 @@
       catch (error) { await writer.abort().catch(() => {}); throw error; }
       setStatus(exportStatus, `保存成功：${target.name} · ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`);
       if (showNotice) notifySave(`✓ 保存成功，已更新 ${target.name}`);
+      return true;
     }).catch(() => {
       setStatus(exportStatus, 'HTML 文件未更新，本机总结仍保留。请检查文件是否被占用，再点击“保存总结记录”。', true);
       if (showNotice) notifySave('保存失败：请检查文件占用或写入权限', true);
+      return false;
     });
     return writeChain;
   }
   async function saveArchive() {
-    if (saving) return;
+    if (saving || changingLocation) return;
     saving = true;
     const button = $('downloadDaily');
     button.disabled = true;
+    $('changeDailyLocation').disabled = true;
     button.textContent = '保存中…';
     clearTimeout(noticeTimer);
     $('dailySaveNotice').textContent = '';
@@ -138,7 +140,52 @@
     } finally {
       saving = false;
       button.disabled = false;
+      $('changeDailyLocation').disabled = !('showSaveFilePicker' in window);
       button.textContent = '保存总结记录';
+    }
+  }
+  async function changeLocation() {
+    if (saving || changingLocation) return;
+    if (!('showSaveFilePicker' in window)) {
+      notifySave('当前环境请在保存文件时选择下载位置', true);
+      return;
+    }
+    changingLocation = true;
+    const button = $('changeDailyLocation');
+    button.disabled = true;
+    button.textContent = '选择保存位置…';
+    $('downloadDaily').disabled = true;
+    clearTimeout(archiveTimer);
+    clearTimeout(noticeTimer);
+    $('dailySaveNotice').textContent = '';
+    $('dailySaveNotice').classList.toggle('visible', false);
+    try {
+      persist();
+      if (!archiveRows().length) { notifySave('请先填写总结，再选择保存位置'); return; }
+      const selected = await window.showSaveFilePicker({
+        suggestedName: archiveHandle ? archiveHandle.name : '总结记录.html',
+        types: [{ description: '总结记录 HTML', accept: { 'text/html': ['.html'] } }]
+      });
+      // Keep the original file active until a full write to the new file succeeds.
+      button.textContent = '正在保存全部记录…';
+      if (!await writeArchive(false, selected)) {
+        notifySave('更改位置未完成，仍保留原保存位置', true);
+        return;
+      }
+      archiveHandle = selected;
+      let remembered = true;
+      try { await rememberHandle(selected); } catch (error) { remembered = false; }
+      setStatus(exportStatus, `保存成功：${selected.name}，之后将更新这个文件。${remembered ? '' : '本次位置已生效；下次打开可能需要重新选择位置。'}`);
+      notifySave(`✓ 保存成功，已更改保存位置：${selected.name}`);
+    } catch (error) {
+      if (error.name === 'AbortError') setStatus(exportStatus, '已取消更改，继续使用原保存位置。');
+      else { setStatus(exportStatus, '更改保存位置失败，原保存位置及本机总结仍保留。', true); notifySave('更改位置失败，请重试', true); }
+    } finally {
+      changingLocation = false;
+      button.disabled = false;
+      button.textContent = '更改保存位置';
+      $('downloadDaily').disabled = false;
+      scheduleArchive();
     }
   }
   function downloadBackup() {
@@ -155,6 +202,8 @@
   input.addEventListener('input', () => { persist(); rollover(); });
   $('dailyHistory').addEventListener('change', () => { $('dailyHistoryText').textContent = $('dailyHistory').value ? readText($('dailyHistory').value) : '选择日期查看历史总结。'; });
   $('downloadDaily').onclick = saveArchive;
+  $('changeDailyLocation').onclick = changeLocation;
+  $('changeDailyLocation').disabled = !('showSaveFilePicker' in window);
   window.addEventListener('focus', rollover);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) rollover(); });
   window.addEventListener('pagehide', () => { persist(); });
@@ -171,7 +220,7 @@
   catch (error) { setStatus(status, '读取总结失败，请保留浏览器数据并导出备份。', true); }
   if ('showSaveFilePicker' in window) {
     rememberHandle().then(async value => {
-      if (!value || archiveHandle) return;
+      if (!value || archiveHandle || changingLocation || saving) return;
       archiveHandle = value;
       if (await value.queryPermission({ mode: 'readwrite' }) === 'granted') await writeArchive();
       else setStatus(exportStatus, `已记住归档文件 ${value.name}，点击“保存总结记录”继续更新。`);

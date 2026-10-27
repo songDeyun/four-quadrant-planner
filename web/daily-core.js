@@ -38,14 +38,14 @@
     return record;
   }
   function ordered(records) {
-    return validate(records).filter(e => e.text.trim()).sort((a, b) => a.date.localeCompare(b.date));
+    return validate(records).filter(e => e.text.trim()).sort((a, b) => b.date.localeCompare(a.date));
   }
   function escapeHtml(text) {
     return text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function html(records) {
     const rows = ordered(records);
-    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>总结记录</title><style>body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#f5f7fb;color:#172033;margin:0;padding:32px 20px}main{max-width:880px;margin:auto}h1{font-size:28px}header p{color:#7b8798}article{background:white;border-radius:14px;padding:24px;margin:20px 0;box-shadow:0 8px 24px #17203308}h2{font-size:19px;margin:0 0 18px;color:#387bd0}.content{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9}@media print{body{background:white;padding:0}article{box-shadow:none;border-radius:0;padding:12px 0}h2{break-after:avoid}}</style></head><body><main><header><h1>总结记录</h1><p>按日期整理 · 共 ${rows.length} 天</p></header>${rows.map(entry => `<article><h2>${entry.date}</h2><div class="content">${escapeHtml(entry.text)}</div></article>`).join('')}</main></body></html>`;
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>总结记录</title><style>body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#f5f7fb;color:#172033;margin:0;padding:32px 20px}main{max-width:880px;margin:auto}h1{font-size:28px}header p{color:#7b8798}article{background:white;border-radius:14px;padding:24px;margin:20px 0;box-shadow:0 8px 24px #17203308}h2{font-size:19px;margin:0 0 18px;color:#387bd0}.content{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9}@media print{body{background:white;padding:0}article{box-shadow:none;border-radius:0;padding:12px 0}h2{break-after:avoid}}</style></head><body><main><header><h1>总结记录</h1><p>最新日期在前 · 共 ${rows.length} 天</p></header>${rows.map(entry => `<article><h2>${entry.date}</h2><div class="content">${escapeHtml(entry.text)}</div></article>`).join('')}</main></body></html>`;
   }
   const api = { PREFIX, dayKey, validDay, validate, entries, put, html };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
